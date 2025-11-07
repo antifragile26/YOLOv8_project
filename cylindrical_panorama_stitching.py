@@ -62,6 +62,21 @@ def get_exif_data(image_path):
     return None, 1
 
 
+# ==================== 图像旋转处理 ====================
+def rotate_image_by_orientation(img, orientation):
+    """根据EXIF Orientation旋转图像"""
+    if orientation == 1:
+        return img  # 正常，不需要旋转
+    elif orientation == 3:
+        return cv2.rotate(img, cv2.ROTATE_180)
+    elif orientation == 6:
+        return cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+    elif orientation == 8:
+        return cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    else:
+        return img
+
+
 # ==================== 加载图像 ====================
 def load_images(folder_path):
     """加载图像"""
@@ -80,19 +95,28 @@ def load_images(folder_path):
 
     images = []
     valid_files = []
+    orientations = []
+    
     for f in files:
         img = cv2.imread(f)
         if img is not None:
+            # 读取EXIF获取方向信息
+            _, orientation = get_exif_data(f)
+            
+            # 根据EXIF旋转图像
+            img = rotate_image_by_orientation(img, orientation)
+            
             images.append(img)
             valid_files.append(f)
-            print(f"✓ {os.path.basename(f)}")
+            orientations.append(orientation)
+            print(f"✓ {os.path.basename(f)}" + (f" (旋转 Orientation={orientation})" if orientation != 1 else ""))
 
     if not images:
         raise ValueError("无法加载任何有效图片")
 
     print(f"\n加载了 {len(images)} 张图片")
     print(f"图片尺寸: {images[0].shape[1]} x {images[0].shape[0]}\n")
-    return images, valid_files
+    return images, valid_files, orientations
 
 
 # ==================== 圆柱投影 ====================
@@ -243,6 +267,11 @@ def correct_drift(translations, first_last_trans, focal):
     print(f"首尾位移: {actual:.1f}px")
     print(f"角度缺口: {np.degrees(theta_g):.2f}°")
 
+    # 如果角度缺口超过180度，说明首尾匹配可能有问题，跳过校正
+    if abs(np.degrees(theta_g)) > 180.0:
+        print("⚠ 角度缺口异常大，可能是首尾匹配错误，跳过漂移校正\n")
+        return translations, focal
+
     if abs(np.degrees(theta_g)) < 5.0:
         print("缺口较小，跳过校正\n")
         return translations, focal
@@ -259,6 +288,12 @@ def correct_drift(translations, first_last_trans, focal):
         corrected.append((dx - correction, dy, inliers, err))
 
     focal_new = focal * (1 - theta_g / (2 * np.pi))
+    
+    # 防止焦距变成负数或异常值
+    if focal_new < focal * 0.5 or focal_new > focal * 1.5:
+        print(f"⚠ 焦距变化异常 ({focal:.1f} → {focal_new:.1f})，保持原焦距\n")
+        return translations, focal
+    
     print(f"焦距更新: {focal:.1f} → {focal_new:.1f}px\n")
 
     return corrected, focal_new
@@ -379,7 +414,7 @@ def main():
     print("=" * 50)
     
     try:
-        images, files = load_images(image_folder)
+        images, files, orientations = load_images(image_folder)
     except Exception as e:
         print(f"错误: {e}")
         return
@@ -393,20 +428,42 @@ def main():
     print("步骤 2: 圆柱投影")
     print("=" * 50)
 
-    # 从 EXIF 读取焦距
-    focal, orientation = get_exif_data(files[0])
-
-    if focal is None:
+    # 从 EXIF 读取焦距（图像已经旋转过了，使用旋转后的尺寸）
+    # 重新计算焦距基于旋转后的图像
+    orientation = orientations[0]
+    
+    # 尝试从EXIF读取焦距参数
+    try:
+        img_pil = Image.open(files[0])
+        exif = img_pil._getexif()
+        focal_mm = None
+        if exif:
+            for tag_id, value in exif.items():
+                tag = TAGS.get(tag_id, tag_id)
+                if tag == "FocalLength":
+                    if isinstance(value, tuple):
+                        focal_mm = value[0] / value[1]
+                    else:
+                        focal_mm = float(value)
+                    break
+    except:
+        focal_mm = None
+    
+    if focal_mm is None:
         if args.focal:
             focal = args.focal
             print(f"⚠ 使用手动指定焦距: {focal:.0f}px")
         else:
-            # 手动计算: 8.2mm 物理焦距
-            focal_mm = 8.2
+            focal_mm = 8.2  # 假设焦距
             sensor_width = args.sensor_width
             image_width = images[0].shape[1]
             focal = focal_mm * (image_width / sensor_width)
             print(f"⚠ 使用计算焦距: {focal:.0f}px (假设焦距={focal_mm}mm)")
+    else:
+        sensor_width = args.sensor_width
+        image_width = images[0].shape[1]
+        focal = focal_mm * (image_width / sensor_width)
+        print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (旋转后图像宽度={image_width}px)")
     print()
 
     warped = []
