@@ -74,6 +74,8 @@ def load_images(folder_path):
         pattern = os.path.join(folder_path, ext)
         files.extend(glob.glob(pattern))
     
+    # 去重（Windows系统不区分大小写，会导致重复）
+    files = list(set(files))
     files = sorted(files)
     
     if not files:
