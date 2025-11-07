@@ -28,6 +28,11 @@ FORCE_ROTATE = True  # True=强制逆时针旋转90°
 
 # 手动焦距（None=自动计算，或手动指定如 1800）
 MANUAL_FOCAL = None
+
+# ⭐⭐ 羽化宽度（控制拼接缝的平滑度）⭐⭐
+# 数值越大，过渡越平滑（但可能模糊）
+# 建议值：100-300
+BLEND_WIDTH = 250  # 像素
 # ==================== 配置结束 ====================
 
 
@@ -199,7 +204,7 @@ def align_images(warped_images):
 
 
 def blend_images(warped_images, translations):
-    """图像融合"""
+    """图像融合 - 增强羽化"""
     print("=" * 60)
     print("图像融合")
     print("=" * 60)
@@ -227,20 +232,31 @@ def blend_images(warped_images, translations):
     canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.float32)
     count = np.zeros((canvas_h, canvas_w, 1), dtype=np.float32)
     
-    # 羽化融合
-    fade_width = min(50, w // 4)
+    # 羽化宽度（使用全局配置）
+    fade_width = min(BLEND_WIDTH, w // 2)  # 不超过图片宽度的一半
+    print(f"羽化宽度: {fade_width}px")
     
     for i, img in enumerate(warped_images):
         x_off = x_offsets[i]
         y1, y2 = 0, h
         x1, x2 = x_off, x_off + w
         
-        # 创建权重（羽化）
+        # 创建平滑权重（使用余弦插值，过渡更平滑）
         weight = np.ones((h, w, 1), dtype=np.float32)
+        
+        # 左边羽化
         for j in range(fade_width):
-            alpha = j / fade_width
-            weight[:, j] = alpha
-            weight[:, -(j + 1)] = alpha
+            # 使用余弦函数，过渡更平滑
+            alpha = (1 - np.cos(j / fade_width * np.pi)) / 2
+            if j < w:
+                weight[:, j] = alpha
+        
+        # 右边羽化
+        for j in range(fade_width):
+            alpha = (1 - np.cos(j / fade_width * np.pi)) / 2
+            col_idx = w - 1 - j
+            if col_idx >= 0:
+                weight[:, col_idx] = alpha
         
         canvas[y1:y2, x1:x2] += img.astype(np.float32) * weight
         count[y1:y2, x1:x2] += weight
@@ -248,7 +264,7 @@ def blend_images(warped_images, translations):
     count[count == 0] = 1
     panorama = (canvas / count).astype(np.uint8)
     
-    print("✓ 融合完成\n")
+    print("✓ 融合完成（增强羽化）\n")
     return panorama
 
 
