@@ -14,10 +14,14 @@ from PIL.ExifTags import TAGS
 # ==================== 配置区域 ====================
 IMAGE_FOLDER = r"C:\Users\DELL\Desktop\image_understanding\project2\picture"
 OUTPUT_FILE = "panorama.jpg"
-SENSOR_WIDTH = 6.17  # mm
+SENSOR_WIDTH_MM = 6.17  # 传感器宽度 (mm)
+SENSOR_HEIGHT_MM = 4.63  # 传感器高度 (mm)
 
-# ⭐ 关键配置：强制旋转
+# ⭐ 关键配置
 FORCE_ROTATE = True  # True=强制逆时针旋转90度，False=根据EXIF
+
+# ⭐⭐ 焦距调整（如果拼接结果不理想，可以手动设置）
+MANUAL_FOCAL = None  # None=自动计算，或手动指定像素值（如 2000）
 # ==================== 配置结束 ====================
 
 
@@ -341,15 +345,38 @@ def main():
     print("步骤 2: 圆柱投影")
     print("=" * 60)
 
-    focal_mm = get_exif_data(files[0])
-    if focal_mm is None:
-        focal_mm = 8.2
-        print(f"⚠ 无法读取EXIF焦距，使用默认值: {focal_mm}mm")
-    
-    # 使用旋转后图片的宽度计算焦距
-    image_width = images[0].shape[1]
-    focal = focal_mm * (image_width / SENSOR_WIDTH)
-    print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (图像宽度={image_width}px)\n")
+    # 手动指定焦距优先
+    if MANUAL_FOCAL:
+        focal = MANUAL_FOCAL
+        print(f"⚠ 使用手动指定焦距: {focal}px\n")
+    else:
+        focal_mm = get_exif_data(files[0])
+        if focal_mm is None:
+            focal_mm = 8.2
+            print(f"⚠ 无法读取EXIF焦距，使用默认值: {focal_mm}mm")
+        
+        # 关键：焦距计算
+        # 原始图片: 2048(宽) x 1536(高)
+        # 传感器: 6.17mm(宽) x 4.63mm(高)
+        # 旋转90°后: 1536(宽) x 2048(高)
+        # 现在水平方向(1536px)对应传感器的高度方向(4.63mm)
+        if FORCE_ROTATE:
+            rotated_width = images[0].shape[1]  # 1536px
+            rotated_height = images[0].shape[0]  # 2048px
+            
+            # 尝试用长边参数（可能效果更好）
+            sensor_for_horizontal = SENSOR_WIDTH_MM  # 6.17mm
+            focal = focal_mm * (rotated_width / sensor_for_horizontal)
+            
+            print(f"⚠ 图片已旋转 90°")
+            print(f"   原始: 2048 x 1536 → 旋转后: {rotated_width} x {rotated_height}")
+            print(f"   尝试用传感器参数 {sensor_for_horizontal}mm 计算")
+            print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px")
+            print(f"   (如果结果不理想，可以设置 MANUAL_FOCAL 手动调整)\n")
+        else:
+            image_width = images[0].shape[1]
+            focal = focal_mm * (image_width / SENSOR_WIDTH_MM)
+            print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (图像宽度={image_width}px)\n")
 
     warped = []
     for i, img in enumerate(images):
