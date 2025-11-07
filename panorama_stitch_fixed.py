@@ -366,9 +366,18 @@ def main():
         focal_mm = 8.2
         print(f"⚠ 无法读取EXIF焦距，使用默认值: {focal_mm}mm")
     
-    image_width = images[0].shape[1]
-    focal = focal_mm * (image_width / SENSOR_WIDTH)
-    print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (图像宽度={image_width}px)\n")
+    # 关键修复：对于竖向拍摄并旋转的图片，需要使用原始图片的短边来计算焦距
+    # 因为传感器宽度对应的是原始图片的宽度（短边），不是旋转后的
+    orientation = orientations[0]
+    if orientation in [6, 8]:  # 竖向拍摄已旋转
+        # 使用旋转前的原始宽度（即旋转后的高度）
+        sensor_corresponding_pixels = images[0].shape[0]  # 高度
+        print(f"⚠ 检测到竖向拍摄，使用原始宽度计算焦距: {sensor_corresponding_pixels}px")
+    else:
+        sensor_corresponding_pixels = images[0].shape[1]  # 宽度
+    
+    focal = focal_mm * (sensor_corresponding_pixels / SENSOR_WIDTH)
+    print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (传感器对应={sensor_corresponding_pixels}px)\n")
 
     warped = []
     for i, img in enumerate(images):

@@ -458,14 +458,26 @@ def main():
         else:
             focal_mm = 8.2  # 假设焦距
             sensor_width = args.sensor_width
-            image_width = images[0].shape[1]
-            focal = focal_mm * (image_width / sensor_width)
+            # 关键修复：竖向拍摄使用短边
+            orientation = orientations[0]
+            if orientation in [6, 8]:
+                sensor_corresponding_pixels = images[0].shape[0]  # 高度（原始宽度）
+                print(f"⚠ 检测到竖向拍摄，使用原始宽度计算焦距: {sensor_corresponding_pixels}px")
+            else:
+                sensor_corresponding_pixels = images[0].shape[1]  # 宽度
+            focal = focal_mm * (sensor_corresponding_pixels / sensor_width)
             print(f"⚠ 使用计算焦距: {focal:.0f}px (假设焦距={focal_mm}mm)")
     else:
         sensor_width = args.sensor_width
-        image_width = images[0].shape[1]
-        focal = focal_mm * (image_width / sensor_width)
-        print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (旋转后图像宽度={image_width}px)")
+        # 关键修复：竖向拍摄使用短边
+        orientation = orientations[0]
+        if orientation in [6, 8]:
+            sensor_corresponding_pixels = images[0].shape[0]  # 高度（原始宽度）
+            print(f"⚠ 检测到竖向拍摄，使用原始宽度计算焦距: {sensor_corresponding_pixels}px")
+        else:
+            sensor_corresponding_pixels = images[0].shape[1]  # 宽度
+        focal = focal_mm * (sensor_corresponding_pixels / sensor_width)
+        print(f"✓ 焦距: {focal_mm:.1f}mm → {focal:.0f}px (传感器对应={sensor_corresponding_pixels}px)")
     print()
 
     warped = []
